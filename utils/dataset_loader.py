@@ -1,44 +1,49 @@
-from torchvision import datasets, transforms
+from albumentations import Compose, Resize, Normalize, HorizontalFlip, RandomRotate90, ColorJitter
+from albumentations.pytorch import ToTensorV2
+from torchvision import datasets
 from torch.utils.data import DataLoader
+from PIL import Image
+import numpy as np
 
-def load_datasets(data_dir, batch_size=32, num_workers=4):
-    """
-    Load train, validation, and test datasets with data augmentation for training.
 
-    Args:
-        data_dir (str): Root directory containing 'Train', 'Val', and 'Test' folders.
-        batch_size (int): Batch size for data loaders.
-        num_workers (int): Number of worker threads for data loading.
+class AlbumentationsDataset(datasets.ImageFolder):
+    def __init__(self, root, transform=None):
+        super().__init__(root)
+        self.transform = transform
 
-    Returns:
-        tuple: train_loader, val_loader, test_loader, class_names
-    """
-    # Data augmentation for training
-    train_transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(),       # Random horizontal flipping
-        transforms.RandomRotation(15),          # Random rotation
-        transforms.RandomResizedCrop(224),      # Random crop and resize
-        transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),  # Color jitter
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])  # Normalize
-    ])
+    def __getitem__(self, index):
+        path, target = self.samples[index]
+        image = Image.open(path).convert("RGB")
+        if self.transform:
+            image = self.transform(image=np.array(image))["image"]
+        return image, target
 
-    # Standard transformations for validation and test sets
-    val_test_transform = transforms.Compose([
-        transforms.Resize(256),                  # Resize to 256 for consistent input
-        transforms.CenterCrop(224),             # Center crop to 224x224
-        transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    ])
 
-    # Load datasets
-    train_dataset = datasets.ImageFolder(root=f"{data_dir}/Train", transform=train_transform)
-    val_dataset = datasets.ImageFolder(root=f"{data_dir}/Val", transform=val_test_transform)
-    test_dataset = datasets.ImageFolder(root=f"{data_dir}/Test", transform=val_test_transform)
+def load_datasets(data_dir, batch_size, augmentation="baseline"):
+    if augmentation == "baseline":
+        transform = Compose([
+            Resize(224, 224),
+            Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2()
+        ])
+    elif augmentation == "augmented":
+        transform = Compose([
+            Resize(224, 224),
+            HorizontalFlip(p=0.5),
+            RandomRotate90(p=0.5),
+            ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1),
+            Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2()
+        ])
+    else:
+        raise ValueError(f"Unsupported augmentation type: {augmentation}")
 
-    # Create data loaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=True)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=True)
+    train_dataset = AlbumentationsDataset(root=f"{data_dir}/train", transform=transform)
+    val_dataset = AlbumentationsDataset(root=f"{data_dir}/val", transform=transform)
+    test_dataset = AlbumentationsDataset(root=f"{data_dir}/test", transform=transform)
 
-    return train_loader, val_loader, test_loader, train_dataset.classes
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    return train_loader, val_loader, test_loader
