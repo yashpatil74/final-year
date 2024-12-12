@@ -21,6 +21,9 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
     elif model_name == "resnet18":
         model = models.resnet18(pretrained=pretrained)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
+    elif model_name == "resnet50":
+        model = models.resnet50(pretrained=pretrained)
+        model.fc = nn.Linear(model.fc.in_features, num_classes)
     elif model_name == "efficientnet_b0":
         model = models.efficientnet_b0(pretrained=pretrained)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
