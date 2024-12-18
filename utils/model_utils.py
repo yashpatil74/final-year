@@ -1,5 +1,10 @@
 import torch.nn as nn
 from torchvision import models
+from torchvision.models import (
+    VGG16_Weights, ResNet18_Weights, ResNet50_Weights,
+    EfficientNet_B0_Weights, MobileNet_V2_Weights,
+    DenseNet121_Weights, ConvNeXt_Tiny_Weights
+)
 
 def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False, unfreeze_last_n=0):
     """
@@ -15,27 +20,42 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
     Returns:
         model: PyTorch model.
     """
+    # Select model and weights
     if model_name == "vgg16":
-        model = models.vgg16(pretrained=pretrained)
+        weights = VGG16_Weights.DEFAULT if pretrained else None
+        model = models.vgg16(weights=weights)
         model.classifier[6] = nn.Linear(model.classifier[6].in_features, num_classes)
+
     elif model_name == "resnet18":
-        model = models.resnet18(pretrained=pretrained)
+        weights = ResNet18_Weights.DEFAULT if pretrained else None
+        model = models.resnet18(weights=weights)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
+
     elif model_name == "resnet50":
-        model = models.resnet50(pretrained=pretrained)
+        weights = ResNet50_Weights.DEFAULT if pretrained else None
+        model = models.resnet50(weights=weights)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
+
     elif model_name == "efficientnet_b0":
-        model = models.efficientnet_b0(pretrained=pretrained)
+        weights = EfficientNet_B0_Weights.DEFAULT if pretrained else None
+        model = models.efficientnet_b0(weights=weights)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+
     elif model_name == "mobilenet_v2":
-        model = models.mobilenet_v2(pretrained=pretrained)
+        weights = MobileNet_V2_Weights.DEFAULT if pretrained else None
+        model = models.mobilenet_v2(weights=weights)
         model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
+
     elif model_name == "densenet121":
-        model = models.densenet121(pretrained=pretrained)
+        weights = DenseNet121_Weights.DEFAULT if pretrained else None
+        model = models.densenet121(weights=weights)
         model.classifier = nn.Linear(model.classifier.in_features, num_classes)
+
     elif model_name == "convnext_tiny":
-        model = models.convnext_tiny(pretrained=pretrained)
+        weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
+        model = models.convnext_tiny(weights=weights)
         model.classifier[2] = nn.Linear(model.classifier[2].in_features, num_classes)
+
     else:
         raise ValueError(f"Model {model_name} not supported.")
 
