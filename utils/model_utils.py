@@ -77,15 +77,16 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
             nn.Linear(model.classifier.in_features, num_classes)
         )
 
-    elif model_name == "convnext_tiny":
+    if model_name == "convnext_tiny":
         weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
         model = models.convnext_tiny(weights=weights)
+        
+        # Update the classifier with Flatten and Dropout
         model.classifier = nn.Sequential(
-            nn.LayerNorm(model.classifier[2].in_features, eps=1e-6),
-            nn.Dropout(p=dropout_prob),  # Add Dropout here
-            nn.Linear(model.classifier[2].in_features, num_classes)
+            nn.Flatten(),  # Flatten input from [batch_size, 768, 1, 1] to [batch_size, 768]
+            nn.Dropout(p=dropout_prob),  # Add Dropout for regularization
+            nn.Linear(model.classifier[2].in_features, num_classes),  # Classifier head
         )
-
     else:
         raise ValueError(f"Model {model_name} not supported.")
 
