@@ -1,7 +1,6 @@
 import torch
-import os
 from tqdm import tqdm
-from sklearn.metrics import recall_score, f1_score
+from sklearn.metrics import recall_score, f1_score, precision_score
 
 def train_model(
     model,
@@ -12,9 +11,9 @@ def train_model(
     scheduler=None,
     device="cpu",
     save_path=None,
-    early_stop_patience=5,
-    monitor_metric="val_recall",  # Options: "val_recall", "val_loss", "val_f1"
-    max_epochs=float("inf")
+    early_stop_patience=8,
+    monitor_metric="val_f1",  # Options: "val_recall", "val_loss", "val_f1"
+    max_epochs=100
 ):
     """
     Trains a PyTorch model with early stopping, learning rate adjustment, and metric tracking.
@@ -40,6 +39,7 @@ def train_model(
 
     # Create save directory if not exists
     if save_path:
+        import os
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
     # Initialization
@@ -54,6 +54,7 @@ def train_model(
         # Training phase
         model.train()
         train_loss, train_correct = 0, 0
+        y_train_true, y_train_pred = [], []
 
         train_progress = tqdm(train_loader, desc=f"Epoch [{epoch}] - Training", leave=False)
         for images, labels in train_progress:
@@ -67,14 +68,17 @@ def train_model(
 
             train_loss += loss.item() * images.size(0)
             train_correct += (outputs.argmax(1) == labels).sum().item()
+            y_train_true.extend(labels.cpu().numpy())
+            y_train_pred.extend(outputs.argmax(1).cpu().numpy())
 
         train_loss /= len(train_loader.dataset)
         train_acc = train_correct / len(train_loader.dataset)
+        train_f1 = f1_score(y_train_true, y_train_pred, average="binary")
 
         # Validation phase
         model.eval()
         val_loss, val_correct = 0, 0
-        y_true, y_pred = [], []
+        y_val_true, y_val_pred = [], []
 
         with torch.no_grad():
             for images, labels in val_loader:
@@ -84,29 +88,30 @@ def train_model(
 
                 val_loss += loss.item() * images.size(0)
                 val_correct += (outputs.argmax(1) == labels).sum().item()
-
-                preds = outputs.argmax(1).cpu().numpy()
-                y_true.extend(labels.cpu().numpy())
-                y_pred.extend(preds)
+                y_val_true.extend(labels.cpu().numpy())
+                y_val_pred.extend(outputs.argmax(1).cpu().numpy())
 
         val_loss /= len(val_loader.dataset)
         val_acc = val_correct / len(val_loader.dataset)
-        val_recall = recall_score(y_true, y_pred, average="binary")
-        val_f1 = f1_score(y_true, y_pred, average="binary")
+        val_f1 = f1_score(y_val_true, y_val_pred, average="binary")
+        val_recall = recall_score(y_val_true, y_val_pred, average="binary")
 
-        # Update metrics
         history["train_loss"].append(train_loss)
         history["val_loss"].append(val_loss)
         history["train_acc"].append(train_acc)
         history["val_acc"].append(val_acc)
-        history["val_recall"].append(val_recall)
         history["val_f1"].append(val_f1)
+        history["val_recall"].append(val_recall)
 
-        # Print epoch summary
-        print(
-            f"Epoch [{epoch}]: Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | "
-            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, Val Recall: {val_recall:.4f}, Val F1: {val_f1:.4f}"
-        )
+        # Scheduler Step
+        if scheduler:
+            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                scheduler.step(val_f1 if monitor_metric == "val_f1" else val_recall)
+            else:
+                scheduler.step()
+
+            lr = optimizer.param_groups[0]['lr']
+            print(f"[INFO] Learning rate adjusted to: {lr:.6f}")
 
         # Early Stopping Logic
         current_metric = locals()[monitor_metric]  # Dynamically access the metric
@@ -114,7 +119,6 @@ def train_model(
            (monitor_metric != "val_loss" and current_metric > best_metric):
             best_metric = current_metric
             patience = 0
-            # Save the best model
             if save_path:
                 torch.save(model.state_dict(), save_path)
                 print(f"[INFO] Best model saved with {monitor_metric}: {best_metric:.4f}")
@@ -122,16 +126,11 @@ def train_model(
             patience += 1
             print(f"[INFO] No improvement in {monitor_metric}. Patience: {patience}/{early_stop_patience}")
 
-        # Scheduler Step
-        if scheduler:
-            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                scheduler.step(current_metric)  # Monitor metric for ReduceLROnPlateau
-            else:
-                scheduler.step()
+        # Print epoch summary
+        print(
+            f"Epoch [{epoch}]: Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | "
+            f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, Val Recall: {val_recall:.4f}, Val F1: {val_f1:.4f}"
+        )
 
-            # Log learning rate
-            lr = optimizer.param_groups[0]['lr']
-            print(f"[INFO] Learning rate adjusted to: {lr:.6f}")
-
-    print(f"[INFO] Training stopped after {epoch} epochs.\n")
+    print(f"[INFO] Training stopped after {epoch} epochs. Best {monitor_metric}: {best_metric:.4f}\n")
     return history
