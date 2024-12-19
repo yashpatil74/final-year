@@ -28,10 +28,10 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
         model.classifier = nn.Sequential(
             nn.Linear(512 * 7 * 7, 4096),
             nn.ReLU(),
-            nn.Dropout(p=dropout_prob),  # Add Dropout here
+            nn.Dropout(p=dropout_prob),
             nn.Linear(4096, 4096),
             nn.ReLU(),
-            nn.Dropout(p=dropout_prob),  # Add another Dropout here
+            nn.Dropout(p=dropout_prob),
             nn.Linear(4096, num_classes)
         )
 
@@ -40,7 +40,7 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
         model = models.resnet18(weights=weights)
         num_ftrs = model.fc.in_features
         model.fc = nn.Sequential(
-            nn.Dropout(p=dropout_prob),  # Add Dropout before the FC layer
+            nn.Dropout(p=dropout_prob),
             nn.Linear(num_ftrs, num_classes)
         )
 
@@ -49,7 +49,7 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
         model = models.resnet50(weights=weights)
         num_ftrs = model.fc.in_features
         model.fc = nn.Sequential(
-            nn.Dropout(p=dropout_prob),  # Add Dropout here
+            nn.Dropout(p=dropout_prob),
             nn.Linear(num_ftrs, num_classes)
         )
 
@@ -57,7 +57,7 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
         weights = EfficientNet_B0_Weights.DEFAULT if pretrained else None
         model = models.efficientnet_b0(weights=weights)
         model.classifier = nn.Sequential(
-            nn.Dropout(p=dropout_prob),  # Add Dropout here
+            nn.Dropout(p=dropout_prob),
             nn.Linear(model.classifier[1].in_features, num_classes)
         )
 
@@ -65,7 +65,7 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
         weights = MobileNet_V2_Weights.DEFAULT if pretrained else None
         model = models.mobilenet_v2(weights=weights)
         model.classifier = nn.Sequential(
-            nn.Dropout(p=dropout_prob),  # Add Dropout here
+            nn.Dropout(p=dropout_prob),
             nn.Linear(model.classifier[1].in_features, num_classes)
         )
 
@@ -73,20 +73,19 @@ def initialize_model(model_name, num_classes, pretrained=True, freeze_all=False,
         weights = DenseNet121_Weights.DEFAULT if pretrained else None
         model = models.densenet121(weights=weights)
         model.classifier = nn.Sequential(
-            nn.Dropout(p=dropout_prob),  # Add Dropout here
+            nn.Dropout(p=dropout_prob),
             nn.Linear(model.classifier.in_features, num_classes)
         )
 
-    if model_name == "convnext_tiny":
+    elif model_name == "convnext_tiny":
         weights = ConvNeXt_Tiny_Weights.DEFAULT if pretrained else None
         model = models.convnext_tiny(weights=weights)
-        
-        # Update the classifier with Flatten and Dropout
         model.classifier = nn.Sequential(
-            nn.Flatten(),  # Flatten input from [batch_size, 768, 1, 1] to [batch_size, 768]
-            nn.Dropout(p=dropout_prob),  # Add Dropout for regularization
-            nn.Linear(model.classifier[2].in_features, num_classes),  # Classifier head
+            nn.Flatten(),
+            nn.Dropout(p=dropout_prob),
+            nn.Linear(model.classifier[2].in_features, num_classes),
         )
+
     else:
         raise ValueError(f"Model {model_name} not supported.")
 
