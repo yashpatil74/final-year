@@ -38,7 +38,7 @@ def load_datasets(data_dir, batch_size, augmentation="baseline"):
             RandomRotate90(p=0.5),  # Random rotations in multiples of 90 degrees
             ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, p=0.5),  # Shifts, scaling, rotations
             ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1),  # Color jittering
-            GaussianBlur(blur_limit=3, p=0.3),  # Slight blur
+            GaussianBlur(blur_limit=(3, 7), p=0.3),  # Slight blur with corrected blur_limit
             GridDistortion(p=0.3),  # Grid-based distortion
             CoarseDropout(max_holes=8, max_height=16, max_width=16, p=0.3),  # Randomly drop sections
             GaussNoise(var_limit=(10.0, 50.0), p=0.2),  # Add Gaussian noise
