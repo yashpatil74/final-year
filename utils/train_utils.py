@@ -1,6 +1,9 @@
 import torch
 from tqdm import tqdm
-from sklearn.metrics import recall_score, f1_score, precision_score
+from sklearn.metrics import classification_report, recall_score, f1_score, precision_score
+import json
+import os
+
 
 def train_model(
     model,
@@ -16,7 +19,7 @@ def train_model(
     max_epochs=100
 ):
     """
-    Trains a PyTorch model with early stopping, learning rate adjustment, and metric tracking.
+    Trains a PyTorch model with early stopping, learning rate adjustment, and detailed metric tracking.
 
     Args:
         model: PyTorch model to train.
@@ -35,14 +38,17 @@ def train_model(
         history (dict): Training and validation metrics history.
     """
     model.to(device)
-    history = {"train_loss": [], "val_loss": [], "train_acc": [], "val_acc": [], "val_recall": [], "val_f1": []}
+    history = {
+        "train_loss": [], "val_loss": [],
+        "train_acc": [], "val_acc": [],
+        "train_f1": [], "val_f1": [],
+        "train_recall": [], "val_recall": []
+    }
 
-    # Create save directory if not exists
+    # Ensure save directory exists
     if save_path:
-        import os
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
-    # Initialization
     best_metric = float("inf") if monitor_metric == "val_loss" else -float("inf")
     patience = 0
     epoch = 0
@@ -56,8 +62,7 @@ def train_model(
         train_loss, train_correct = 0, 0
         y_train_true, y_train_pred = [], []
 
-        train_progress = tqdm(train_loader, desc=f"Epoch [{epoch}] - Training", leave=False)
-        for images, labels in train_progress:
+        for images, labels in tqdm(train_loader, desc=f"Epoch [{epoch}] - Training", leave=False):
             images, labels = images.to(device), labels.to(device)
 
             optimizer.zero_grad()
@@ -74,6 +79,7 @@ def train_model(
         train_loss /= len(train_loader.dataset)
         train_acc = train_correct / len(train_loader.dataset)
         train_f1 = f1_score(y_train_true, y_train_pred, average="binary")
+        train_recall = recall_score(y_train_true, y_train_pred, average="binary")
 
         # Validation phase
         model.eval()
@@ -100,13 +106,15 @@ def train_model(
         history["val_loss"].append(val_loss)
         history["train_acc"].append(train_acc)
         history["val_acc"].append(val_acc)
+        history["train_f1"].append(train_f1)
         history["val_f1"].append(val_f1)
+        history["train_recall"].append(train_recall)
         history["val_recall"].append(val_recall)
 
         # Scheduler Step
         if scheduler:
             if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                scheduler.step(val_f1 if monitor_metric == "val_f1" else val_recall)
+                scheduler.step(val_f1 if monitor_metric == "val_f1" else val_loss)
             else:
                 scheduler.step()
 
@@ -131,6 +139,25 @@ def train_model(
             f"Epoch [{epoch}]: Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | "
             f"Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}, Val Recall: {val_recall:.4f}, Val F1: {val_f1:.4f}"
         )
+
+    # Save final metrics to a JSON file
+    final_metrics = {
+        "best_epoch": epoch - patience,
+        "best_metric": best_metric,
+        "train_loss": history["train_loss"][-1],
+        "val_loss": history["val_loss"][-1],
+        "train_acc": history["train_acc"][-1],
+        "val_acc": history["val_acc"][-1],
+        "train_f1": history["train_f1"][-1],
+        "val_f1": history["val_f1"][-1],
+        "train_recall": history["train_recall"][-1],
+        "val_recall": history["val_recall"][-1]
+    }
+
+    metrics_file = os.path.join(os.path.dirname(save_path), "final_metrics.json")
+    with open(metrics_file, "w") as f:
+        json.dump(final_metrics, f, indent=4)
+    print(f"[INFO] Final metrics saved to {metrics_file}")
 
     print(f"[INFO] Training stopped after {epoch} epochs. Best {monitor_metric}: {best_metric:.4f}\n")
     return history

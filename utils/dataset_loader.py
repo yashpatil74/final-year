@@ -1,19 +1,23 @@
+import logging
 from albumentations import (
     Compose, Resize, Normalize, HorizontalFlip, RandomRotate90, ShiftScaleRotate, ColorJitter,
-    GaussianBlur, GaussNoise, GridDistortion, RandomFog, RandomRain, RandomShadow,
-    CoarseDropout, Cutout
+    GaussianBlur, GaussNoise, GridDistortion, RandomFog, CoarseDropout
 )
 from albumentations.pytorch import ToTensorV2
 from torchvision import datasets
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 from PIL import Image
 import numpy as np
+import os
 
+# Initialize logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
 class AlbumentationsDataset(datasets.ImageFolder):
     def __init__(self, root, transform=None):
         super().__init__(root)
         self.transform = transform
+        logging.info(f"Initialized AlbumentationsDataset with root: {root}")
 
     def __getitem__(self, index):
         path, target = self.samples[index]
@@ -23,32 +27,56 @@ class AlbumentationsDataset(datasets.ImageFolder):
         return image, target
 
 
-def load_datasets(data_dir, batch_size, augmentation="baseline"):
+def compute_class_weights(data_dir):
+    """
+    Compute class weights for the dataset to handle imbalance.
+    Args:
+        data_dir (str): Path to dataset folder.
+
+    Returns:
+        weights (dict): Class weights for balancing.
+    """
+    logging.info(f"Computing class weights from directory: {data_dir}")
+    counts = {"fire": 0, "nofire": 0}
+    for cls in counts.keys():
+        class_dir = os.path.join(data_dir, cls)
+        counts[cls] = len(os.listdir(class_dir))
+        logging.info(f"Class '{cls}' has {counts[cls]} samples.")
+    total = sum(counts.values())
+    weights = {cls: total / count for cls, count in counts.items()}
+    logging.info(f"Computed class weights: {weights}")
+    return weights
+
+
+def load_datasets(data_dir, batch_size, augmentation="baseline", weighted_sampler=True):
+    """
+    Enhanced data loader with class balancing options.
+
+    Args:
+        data_dir (str): Path to the dataset directory.
+        batch_size (int): Batch size for loaders.
+        augmentation (str): Type of augmentation ("baseline" or "augmented").
+        weighted_sampler (bool): Use a weighted sampler for class balancing.
+    """
+    logging.info(f"Loading datasets from {data_dir} with augmentation type '{augmentation}'.")
+
+    # Augmentation selection
     if augmentation == "baseline":
-        # Basic transformation: Resize and Normalize
+        logging.info("Applying baseline augmentations: Resize and Normalize.")
         transform = Compose([
             Resize(224, 224),
             Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
             ToTensorV2()
         ])
     elif augmentation == "augmented":
-        # Advanced augmentation: Adding distortions, noise, and dropout
+        logging.info("Applying moderate augmentations: Flip, Rotate, and ColorJitter.")
         transform = Compose([
-            Resize(224, 224),  # Uniform image resizing
-            HorizontalFlip(p=0.5),  # Random horizontal flip
-            RandomRotate90(p=0.5),  # Random 90-degree rotations
-            ShiftScaleRotate(shift_limit=0.05, scale_limit=0.1, rotate_limit=15, p=0.5),  # Random transformations
-            ColorJitter(brightness=0.3, contrast=0.3, saturation=0.2, hue=0.1, p=0.5),  # Simulate color changes
-            GaussianBlur(blur_limit=5, p=0.3),  # Simulate slight blur
-            GaussNoise(var_limit=(10.0, 50.0), p=0.3),  # Add Gaussian noise
-            GridDistortion(p=0.3),  # Grid-based distortions for variation
-            RandomFog(fog_coef_lower=0.2, fog_coef_upper=0.5, alpha_coef=0.1, p=0.3),  # Simulate fog
-            RandomRain(blur_value=3, drop_length=5, drop_width=1, p=0.3),  # Simulate rain
-            RandomShadow(shadow_roi=(0, 0.5, 1, 1), num_shadows_lower=1, num_shadows_upper=2, shadow_dimension=4, p=0.3),  # Add shadows
-            CoarseDropout(max_holes=8, max_height=16, max_width=16, p=0.3),  # Random pixel drop
-            Cutout(num_holes=4, max_h_size=32, max_w_size=32, fill_value=0, p=0.3),  # Remove small patches
-            Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),  # Normalize for pre-trained models
-            ToTensorV2()  # Convert to PyTorch Tensor
+            Resize(224, 224),
+            HorizontalFlip(p=0.5),  # Flip horizontally with 50% probability.
+            ShiftScaleRotate(shift_limit=0.03, scale_limit=0.05, rotate_limit=10, p=0.4),  # Slight transformations.
+            ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.05, p=0.3),  # Mild color adjustments.
+            Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
+            ToTensorV2()
         ])
     else:
         raise ValueError(f"Unsupported augmentation type: {augmentation}")
@@ -58,29 +86,20 @@ def load_datasets(data_dir, batch_size, augmentation="baseline"):
     val_dataset = AlbumentationsDataset(root=f"{data_dir}/val", transform=transform)
     test_dataset = AlbumentationsDataset(root=f"{data_dir}/test", transform=transform)
 
-    # DataLoaders
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    logging.info("Datasets initialized. Preparing DataLoaders...")
+
+    if weighted_sampler:
+        logging.info("Using WeightedRandomSampler for class balancing.")
+        class_weights = compute_class_weights(f"{data_dir}/train")
+        weights = [class_weights[train_dataset.classes[label]] for _, label in train_dataset]
+        sampler = WeightedRandomSampler(weights, num_samples=len(weights))
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
+    else:
+        logging.info("Using default sampler for training data.")
+        train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
     val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
+    logging.info("DataLoaders created successfully.")
     return train_loader, val_loader, test_loader
-
-
-# Example usage
-if __name__ == "__main__":
-    # Directory containing train, val, test subfolders
-    data_dir = "/path/to/data"
-    batch_size = 32
-
-    # Load datasets with advanced augmentation
-    train_loader, val_loader, test_loader = load_datasets(data_dir, batch_size, augmentation="augmented")
-
-    # Example: Display some augmented images from the train_loader
-    import matplotlib.pyplot as plt
-    for images, labels in train_loader:
-        fig, axes = plt.subplots(1, 4, figsize=(12, 3))
-        for img, ax in zip(images[:4], axes):  # Show the first 4 images
-            ax.imshow(img.permute(1, 2, 0).numpy())  # Convert Tensor to NumPy for plotting
-            ax.axis("off")
-        plt.show()
-        break

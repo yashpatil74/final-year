@@ -3,6 +3,10 @@ import torch
 import numpy as np
 import json
 import os
+import matplotlib.pyplot as plt
+import seaborn as sns
+from torchvision.transforms import ToPILImage
+
 
 def evaluate_model(model, test_loader, classes, device, model_name="model", save_base_path="outputs/logs"):
     """
@@ -17,7 +21,7 @@ def evaluate_model(model, test_loader, classes, device, model_name="model", save
         save_base_path: Base directory to save evaluation logs.
 
     Returns:
-        dict: A dictionary containing classification report, confusion matrix, and ROC AUC scores.
+        dict: A dictionary containing classification report, confusion matrix, ROC AUC scores, and true/predicted labels.
     """
     model.eval()
     model.to(device)
@@ -35,18 +39,21 @@ def evaluate_model(model, test_loader, classes, device, model_name="model", save
     # Compute metrics
     classification_report_dict = classification_report(y_true, y_pred, target_names=classes, output_dict=True)
     confusion_mat = confusion_matrix(y_true, y_pred)
-    roc_auc = roc_auc_score(y_true, np.array(y_probs)[:, 1], average="weighted", multi_class="ovr")
+    roc_auc = roc_auc_score(y_true, np.array(y_probs)[:, 1], average="weighted")
 
-    # Combine metrics into a dictionary
+    # Convert results to JSON-serializable types
     results = {
         "classification_report": classification_report_dict,
-        "confusion_matrix": confusion_mat.tolist(),  # Convert numpy array to list for JSON compatibility
-        "roc_auc": roc_auc
+        "confusion_matrix": confusion_mat.tolist(),
+        "roc_auc": float(roc_auc),
+        "y_true": list(map(int, y_true)),
+        "y_pred": list(map(int, y_pred)),
+        "y_scores": np.array(y_probs)[:, 1].tolist()
     }
 
     # Prepare dynamic directory and file path
     model_logs_path = os.path.join(save_base_path, model_name)
-    os.makedirs(model_logs_path, exist_ok=True)  # Create the directory if it doesn't exist
+    os.makedirs(model_logs_path, exist_ok=True)
     file_name = os.path.join(model_logs_path, f"{model_name}_evaluation.json")
 
     # Save metrics to a JSON file
@@ -57,31 +64,33 @@ def evaluate_model(model, test_loader, classes, device, model_name="model", save
     return results
 
 
-def plot_confusion_matrix(cm, classes, normalize=False, cmap="Blues"):
+def plot_confusion_matrix(cm, classes, output_path=None, normalize=False):
     """
     Plots a confusion matrix.
 
     Args:
         cm: Confusion matrix.
         classes: List of class labels.
-        normalize: Whether to normalize the values.
-        cmap: Colormap to use.
+        output_path: Path to save the plot. If None, displays the plot.
+        normalize: Whether to normalize the confusion matrix.
     """
-    import matplotlib.pyplot as plt
-    import seaborn as sns
-
-    plt.figure(figsize=(8, 6))
     if normalize:
-        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        cm = cm.astype("float") / cm.sum(axis=1)[:, np.newaxis]
         fmt = ".2f"
     else:
         fmt = "d"
 
-    sns.heatmap(cm, annot=True, fmt=fmt, cmap=cmap, xticklabels=classes, yticklabels=classes)
-    plt.ylabel("True label")
-    plt.xlabel("Predicted label")
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt=fmt, cmap="Blues", xticklabels=classes, yticklabels=classes)
+    plt.xlabel("Predicted")
+    plt.ylabel("True")
     plt.title("Confusion Matrix")
-    plt.show()
+
+    if output_path:
+        plt.savefig(output_path)
+        print(f"[INFO] Confusion matrix saved to {output_path}")
+    else:
+        plt.show()
 
 
 def log_misclassified_samples(test_loader, y_true, y_pred, classes, model_name="model", save_base_path="outputs/logs"):
@@ -99,12 +108,10 @@ def log_misclassified_samples(test_loader, y_true, y_pred, classes, model_name="
     misclassified_indices = [i for i, (true, pred) in enumerate(zip(y_true, y_pred)) if true != pred]
     print(f"[INFO] Number of misclassified samples: {len(misclassified_indices)}")
 
-    # Prepare dynamic directory and file path
     model_logs_path = os.path.join(save_base_path, model_name)
-    os.makedirs(model_logs_path, exist_ok=True)  # Create the directory if it doesn't exist
+    os.makedirs(model_logs_path, exist_ok=True)
     file_name = os.path.join(model_logs_path, f"{model_name}_misclassified_samples.json")
 
-    # Save misclassified indices to a JSON file
     misclassified_samples = [
         {"index": idx, "true_label": classes[true], "predicted_label": classes[pred]}
         for idx, (true, pred) in enumerate(zip(y_true, y_pred))
@@ -114,12 +121,22 @@ def log_misclassified_samples(test_loader, y_true, y_pred, classes, model_name="
         json.dump(misclassified_samples, f, indent=4)
     print(f"[INFO] Misclassified samples saved to {file_name}")
 
-    # Optionally visualize a few misclassified samples
-    import matplotlib.pyplot as plt
-    from torchvision.transforms import ToPILImage
 
+def visualize_misclassified_samples(test_loader, y_true, y_pred, classes, num_samples=5):
+    """
+    Visualizes a few misclassified samples.
+
+    Args:
+        test_loader: DataLoader for the test dataset.
+        y_true: Ground truth labels.
+        y_pred: Predicted labels.
+        classes: List of class labels.
+        num_samples: Number of samples to visualize.
+    """
+    misclassified_indices = [i for i, (true, pred) in enumerate(zip(y_true, y_pred)) if true != pred]
     to_pil = ToPILImage()
-    for idx in misclassified_indices[:5]:
+
+    for idx in misclassified_indices[:num_samples]:
         image, label = test_loader.dataset[idx]
         plt.imshow(to_pil(image))
         plt.title(f"True: {classes[label]}, Pred: {classes[y_pred[idx]]}")
