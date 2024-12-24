@@ -27,7 +27,7 @@ transform = transforms.Compose([
 ])
 
 # Load and preprocess the image
-image_path = r"rainforest-Malaysia.jpg"
+image_path = r"istockphoto-1224965512-612x612.jpg"
 image = Image.open(image_path).convert('RGB')  # Ensure image is in RGB format
 input_tensor = transform(image).unsqueeze(0)  # Add batch dimension
 
