@@ -45,7 +45,6 @@ def train_model(
         "train_recall": [], "val_recall": []
     }
 
-    # Ensure save directory exists
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
 
